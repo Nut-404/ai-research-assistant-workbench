@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import repositories as repo
@@ -12,6 +12,11 @@ from app.config import get_settings
 from app.database import get_db, init_db
 from app.evaluation import DEFAULT_EVALUATION_PROMPT, EvaluationRunner
 from app.rag import EmbeddingError, resolve_embedding_backend, retrieve_sources, store_document
+from app.runtime_config import (
+    get_effective_settings,
+    model_config_dict,
+    save_model_config,
+)
 from app.schemas import (
     ChatRequest,
     DocumentCreate,
@@ -19,6 +24,8 @@ from app.schemas import (
     EvaluationRequest,
     EvaluationRunOut,
     HealthOut,
+    ModelConfigOut,
+    ModelConfigUpdate,
     MessageOut,
     PromptOut,
     PromptUpdate,
@@ -57,7 +64,7 @@ def index() -> FileResponse:
 
 @app.get("/api/health", response_model=HealthOut)
 def health() -> HealthOut:
-    settings = get_settings()
+    settings = get_effective_settings()
     api_key_configured = bool(settings.openai_api_key)
     embedding_provider, embedding_model = resolve_embedding_backend(settings)
     return HealthOut(
@@ -134,6 +141,14 @@ def create_document(payload: DocumentCreate) -> dict:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.delete("/api/documents/{document_id}", status_code=204)
+def delete_document(document_id: int) -> Response:
+    with get_db() as db:
+        if not repo.delete_document(db, document_id):
+            raise HTTPException(status_code=404, detail="Document not found")
+    return Response(status_code=204)
+
+
 @app.post("/api/retrieval/preview", response_model=RetrievalPreviewOut)
 def retrieval_preview(payload: RetrievalPreviewRequest) -> RetrievalPreviewOut:
     with get_db() as db:
@@ -155,9 +170,21 @@ def evaluation_runs() -> list[dict]:
         return runs
 
 
+@app.get("/api/model-config", response_model=ModelConfigOut)
+def get_model_config() -> dict:
+    return model_config_dict(get_effective_settings())
+
+
+@app.put("/api/model-config", response_model=ModelConfigOut)
+def update_model_config(payload: ModelConfigUpdate) -> dict:
+    with get_db() as db:
+        save_model_config(db, payload)
+    return model_config_dict(get_effective_settings())
+
+
 @app.post("/api/evaluations", response_model=EvaluationRunOut)
 async def create_evaluation(payload: EvaluationRequest) -> dict:
-    settings = get_settings()
+    settings = get_effective_settings()
     prompt = payload.prompt.strip() or DEFAULT_EVALUATION_PROMPT
     runner = EvaluationRunner(settings)
     return await runner.run(payload.models, prompt)

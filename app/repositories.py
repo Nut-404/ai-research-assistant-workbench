@@ -103,6 +103,17 @@ def get_setting(db: sqlite3.Connection, key: str) -> str | None:
     return row["value"] if row else None
 
 
+def get_settings(db: sqlite3.Connection, keys: tuple[str, ...]) -> dict[str, str]:
+    if not keys:
+        return {}
+    placeholders = ",".join("?" for _ in keys)
+    cursor = db.execute(
+        f"SELECT key, value FROM settings WHERE key IN ({placeholders})",
+        keys,
+    )
+    return {row["key"]: row["value"] for row in cursor.fetchall()}
+
+
 def set_setting(db: sqlite3.Connection, key: str, value: str) -> None:
     db.execute(
         """
@@ -152,6 +163,11 @@ def list_documents(db: sqlite3.Connection) -> list[dict]:
         """
     )
     return [row_to_dict(row) for row in cursor.fetchall()]
+
+
+def delete_document(db: sqlite3.Connection, document_id: int) -> bool:
+    cursor = db.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+    return cursor.rowcount > 0
 
 
 def add_document_chunk(

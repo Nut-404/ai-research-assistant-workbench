@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from openai import APIConnectionError, APIStatusError, OpenAI, OpenAIError
 
 from app import repositories as repo
-from app.config import Settings, get_settings
+from app.config import Settings
+from app.runtime_config import get_effective_settings
 
 
 EMBEDDING_DIMENSIONS = 256
@@ -104,7 +105,7 @@ def resolve_embedding_backend(settings: Settings) -> tuple[str, str]:
 
 class EmbeddingService:
     def __init__(self, settings: Settings | None = None) -> None:
-        self.settings = settings or get_settings()
+        self.settings = settings or get_effective_settings()
         self.provider, self.model = resolve_embedding_backend(self.settings)
         self._client: OpenAI | None = None
 

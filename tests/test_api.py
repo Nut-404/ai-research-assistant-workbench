@@ -158,6 +158,45 @@ class ApiTestCase(unittest.TestCase):
         self.assertGreaterEqual(len(sources), 1)
         self.assertEqual(sources[0]["document_title"], "Admissions project")
 
+    def test_document_can_be_deleted(self):
+        response = self.client.post(
+            "/api/documents",
+            json={
+                "title": "Temporary note",
+                "content": "Delete this retrieval note after indexing.",
+            },
+        )
+        document_id = response.json()["id"]
+
+        delete_response = self.client.delete(f"/api/documents/{document_id}")
+
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertEqual(self.client.get("/api/documents").json(), [])
+        preview = self.client.post(
+            "/api/retrieval/preview",
+            json={"query": "retrieval note", "limit": 2},
+        )
+        self.assertEqual(preview.json()["sources"], [])
+
+    def test_model_config_can_be_updated(self):
+        response = self.client.put(
+            "/api/model-config",
+            json={
+                "openai_model": "gpt-test-config",
+                "openai_base_url": "https://example.com/v1",
+                "temperature": 0.2,
+                "embedding_provider": "local",
+                "embedding_model": "hashing-256",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["openai_model"], "gpt-test-config")
+        health = self.client.get("/api/health").json()
+        self.assertEqual(health["model"], "gpt-test-config")
+        self.assertEqual(health["base_url"], "https://example.com/v1")
+        self.assertEqual(health["embedding_provider"], "local-hashing")
+
     def test_document_upload_reports_embedding_configuration_errors(self):
         with mock.patch.dict(os.environ, {"EMBEDDING_PROVIDER": "unsupported"}):
             get_settings.cache_clear()
@@ -313,6 +352,38 @@ class ApiTestCase(unittest.TestCase):
                 ("assistant", "Hi there"),
             ],
         )
+
+    def test_rag_stream_success_emits_citation_check(self):
+        from app import chat
+
+        class FakeLLMClient:
+            def __init__(self, settings):
+                self.settings = settings
+
+            async def stream_chat(self, messages):
+                yield "The note says retrieval should cite sources [S1]."
+
+        self.client.post(
+            "/api/documents",
+            json={
+                "title": "Citation note",
+                "content": "Retrieval answers should cite sources from uploaded notes.",
+            },
+        )
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+            get_settings.cache_clear()
+            with mock.patch.object(chat, "OpenAICompatibleClient", FakeLLMClient):
+                with self.client.stream(
+                    "POST",
+                    "/api/chat/stream",
+                    json={"message": "What should retrieval answers do?", "use_rag": True},
+                ) as response:
+                    text = "".join(response.iter_text())
+
+        events = parse_sse(text)
+        citation_event = [event for event in events if event[0] == "citation_check"][0]
+        self.assertEqual(citation_event[1]["status"], "valid")
+        self.assertEqual(citation_event[1]["supported_source_ids"], ["S1"])
 
 
 if __name__ == "__main__":

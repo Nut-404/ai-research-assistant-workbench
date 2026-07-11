@@ -62,6 +62,18 @@ class EvaluationRequest(BaseModel):
     prompt: str = Field(default="", max_length=4000)
 
 
+class ModelConfigUpdate(BaseModel):
+    openai_model: str = Field(min_length=1, max_length=160)
+    openai_base_url: str = Field(min_length=1, max_length=500)
+    temperature: float = Field(ge=0, le=2)
+    embedding_provider: str = Field(min_length=1, max_length=80)
+    embedding_model: str = Field(min_length=1, max_length=160)
+
+
+class ModelConfigOut(ModelConfigUpdate):
+    api_key_configured: bool
+
+
 class EvaluationResultOut(BaseModel):
     id: int
     run_id: int

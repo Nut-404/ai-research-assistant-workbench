@@ -43,12 +43,12 @@ BENCHMARK_SOURCES = [
         ),
     ),
     TextCandidate(
-        id="portfolio-value",
-        title="Graduate portfolio note",
+        id="research-value",
+        title="AI system research note",
         content=(
-            "For an AI graduate application, a project is stronger when it explains "
-            "the research question, experimental design, measurable results, "
-            "failure cases, limitations, and future research extensions."
+            "A useful AI systems project is stronger when it explains the research "
+            "question, experimental design, measurable results, failure cases, "
+            "limitations, and future research extensions."
         ),
     ),
 ]
@@ -83,10 +83,10 @@ BENCHMARK_CASES = [
     BenchmarkCase(
         case_id="research-value",
         question=(
-            "Why is this project stronger for an AI graduate application than a "
-            "simple chat demo?"
+            "Why is this project useful for studying AI systems beyond a simple "
+            "chat demo?"
         ),
-        expected_source_ids=("portfolio-value",),
+        expected_source_ids=("research-value",),
         reference_terms=("research", "experimental", "results", "limitations"),
     ),
 ]

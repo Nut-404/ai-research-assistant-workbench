@@ -53,11 +53,30 @@
 
       <aside class="settings-panel" aria-label="Assistant settings">
         <section>
-          <p class="eyebrow">Model</p>
+          <div class="section-title">
+            <p class="eyebrow">Model</p>
+            <span id="model-state">Ready</span>
+          </div>
           <div class="model-box">
             <strong id="model-name">Loading</strong>
             <span id="base-url">Checking provider...</span>
           </div>
+          <input id="model-input" class="text-input" placeholder="Chat model" />
+          <input id="base-url-input" class="text-input" placeholder="Provider base URL" />
+          <input
+            id="temperature-input"
+            class="text-input"
+            type="number"
+            min="0"
+            max="2"
+            step="0.1"
+            placeholder="Temperature"
+          />
+          <input id="embedding-provider-input" class="text-input" placeholder="Embedding provider" />
+          <input id="embedding-model-input" class="text-input" placeholder="Embedding model" />
+          <button id="save-model-config-button" class="secondary-button" type="button">
+            Save model settings
+          </button>
           <label class="toggle-row">
             <input id="rag-toggle" type="checkbox" />
             <span>RAG answers</span>

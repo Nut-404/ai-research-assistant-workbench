@@ -16,6 +16,13 @@ const els = {
   activeTitle: document.querySelector("#active-title"),
   modelName: document.querySelector("#model-name"),
   baseUrl: document.querySelector("#base-url"),
+  modelState: document.querySelector("#model-state"),
+  modelInput: document.querySelector("#model-input"),
+  baseUrlInput: document.querySelector("#base-url-input"),
+  temperatureInput: document.querySelector("#temperature-input"),
+  embeddingProviderInput: document.querySelector("#embedding-provider-input"),
+  embeddingModelInput: document.querySelector("#embedding-model-input"),
+  saveModelConfigButton: document.querySelector("#save-model-config-button"),
   promptInput: document.querySelector("#prompt-input"),
   savePromptButton: document.querySelector("#save-prompt-button"),
   promptSaveState: document.querySelector("#prompt-save-state"),
@@ -43,11 +50,43 @@ async function api(path, options = {}) {
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed: ${response.status}`);
+    throw new Error(await readErrorMessage(response));
   }
 
+  if (response.status === 204) return null;
   return response.json();
+}
+
+async function readErrorMessage(response) {
+  const body = await response.text();
+  if (!body) return `Request failed: ${response.status}`;
+
+  try {
+    const parsed = JSON.parse(body);
+    if (Array.isArray(parsed.detail)) {
+      return parsed.detail.map((item) => item.msg || String(item)).join("; ");
+    }
+    return friendlyError(parsed.detail || body);
+  } catch {
+    return friendlyError(body);
+  }
+}
+
+function friendlyError(message) {
+  const value = String(message || "Request failed.");
+  if (value.includes("OPENAI_API_KEY")) {
+    return "Model provider is not configured. Add an API key in your environment before running chat or evaluation.";
+  }
+  if (value.includes("Unsupported embedding provider")) {
+    return "The selected embedding provider is not supported. Use auto, openai, or local.";
+  }
+  if (value.includes("Document not found")) {
+    return "That document was already removed.";
+  }
+  if (value.includes("Failed to fetch")) {
+    return "The backend is not reachable. Check that the FastAPI server is running.";
+  }
+  return value;
 }
 
 function setStatus(text, isError = false) {
@@ -126,6 +165,20 @@ function renderSources(wrapper, sources) {
   scrollToBottom();
 }
 
+function renderCitationCheck(wrapper, check) {
+  const item = document.createElement("div");
+  item.className = `citation-check ${check.status}`;
+  const available = check.available_source_ids?.join(", ") || "none";
+  const cited = check.cited_source_ids?.join(", ") || "none";
+  const unsupported = check.unsupported_source_ids?.join(", ") || "none";
+  item.innerHTML = `
+    <strong>${escapeHtml(check.message)}</strong>
+    <span>Available: ${escapeHtml(available)} · Cited: ${escapeHtml(cited)} · Unsupported: ${escapeHtml(unsupported)}</span>
+  `;
+  wrapper.appendChild(item);
+  scrollToBottom();
+}
+
 function escapeHtml(value) {
   return value
     .replaceAll("&", "&amp;")
@@ -143,6 +196,46 @@ async function loadHealth() {
   const health = await api("/api/health");
   els.modelName.textContent = health.model;
   els.baseUrl.textContent = `${health.base_url} · ${health.embedding_provider}/${health.embedding_model}`;
+}
+
+function renderModelConfig(config) {
+  els.modelName.textContent = config.openai_model;
+  els.baseUrl.textContent = `${config.openai_base_url} · ${config.embedding_provider}/${config.embedding_model}`;
+  els.modelInput.value = config.openai_model;
+  els.baseUrlInput.value = config.openai_base_url;
+  els.temperatureInput.value = config.temperature;
+  els.embeddingProviderInput.value = config.embedding_provider;
+  els.embeddingModelInput.value = config.embedding_model;
+}
+
+async function loadModelConfig() {
+  const config = await api("/api/model-config");
+  renderModelConfig(config);
+}
+
+async function saveModelConfig() {
+  els.modelState.textContent = "Saving";
+  els.saveModelConfigButton.disabled = true;
+  try {
+    const config = await api("/api/model-config", {
+      method: "PUT",
+      body: JSON.stringify({
+        openai_model: els.modelInput.value.trim(),
+        openai_base_url: els.baseUrlInput.value.trim(),
+        temperature: Number(els.temperatureInput.value),
+        embedding_provider: els.embeddingProviderInput.value.trim(),
+        embedding_model: els.embeddingModelInput.value.trim(),
+      }),
+    });
+    renderModelConfig(config);
+    els.modelState.textContent = "Saved";
+    setStatus("Model settings saved");
+  } catch (error) {
+    els.modelState.textContent = "Error";
+    setStatus(friendlyError(error.message), true);
+  } finally {
+    els.saveModelConfigButton.disabled = false;
+  }
 }
 
 async function loadPrompt() {
@@ -176,11 +269,28 @@ async function loadDocuments() {
     const item = document.createElement("div");
     item.className = "document-item";
     item.innerHTML = `
-      <strong>${escapeHtml(doc.title)}</strong>
-      <span>${doc.chunk_count} chunks · ${formatDate(doc.updated_at)}</span>
+      <div class="document-summary">
+        <strong>${escapeHtml(doc.title)}</strong>
+        <span>${doc.chunk_count} chunks · ${formatDate(doc.updated_at)}</span>
+      </div>
+      <button class="small-button danger-button" type="button">Delete</button>
     `;
+    item.querySelector("button").addEventListener("click", () => deleteDocument(doc.id));
     els.documents.appendChild(item);
   });
+}
+
+async function deleteDocument(documentId) {
+  if (!window.confirm("Delete this document from the knowledge base?")) return;
+  els.documentState.textContent = "Deleting";
+  try {
+    await api(`/api/documents/${documentId}`, { method: "DELETE" });
+    els.documentState.textContent = "Deleted";
+    await loadDocuments();
+  } catch (error) {
+    els.documentState.textContent = "Error";
+    setStatus(friendlyError(error.message), true);
+  }
 }
 
 async function uploadDocument() {
@@ -205,7 +315,7 @@ async function uploadDocument() {
     await loadDocuments();
   } catch (error) {
     els.documentState.textContent = "Error";
-    setStatus(error.message, true);
+    setStatus(friendlyError(error.message), true);
   } finally {
     els.uploadDocumentButton.disabled = false;
   }
@@ -316,9 +426,13 @@ async function sendMessage(event) {
           renderSources(assistantMessage.wrapper, item.data.sources || []);
         }
 
+        if (item.event === "citation_check") {
+          renderCitationCheck(assistantMessage.wrapper, item.data);
+        }
+
         if (item.event === "error") {
           streamFailed = true;
-          assistantBubble.textContent = item.data.message;
+          assistantBubble.textContent = friendlyError(item.data.message);
           setStatus("Error", true);
         }
 
@@ -333,7 +447,7 @@ async function sendMessage(event) {
       await selectSession(state.activeSessionId);
     }
   } catch (error) {
-    assistantBubble.textContent = error.message;
+    assistantBubble.textContent = friendlyError(error.message);
     setStatus("Error", true);
   } finally {
     state.isStreaming = false;
@@ -370,10 +484,21 @@ function renderEvaluation(run) {
         <div><dt>Faithfulness</dt><dd>${Math.round(result.faithfulness_score * 100)}%</dd></div>
         <div><dt>Cases</dt><dd>${result.benchmark_case_count}</dd></div>
       </dl>
-      ${result.error ? `<p class="error-note">${escapeHtml(result.error)}</p>` : ""}
+      ${result.error ? `<p class="error-note">${escapeHtml(friendlyError(result.error))}</p>` : ""}
+      <details class="evaluation-detail">
+        <summary>Details</summary>
+        <pre>${escapeHtml(result.output || friendlyError(result.error || "No model output was recorded."))}</pre>
+      </details>
     `;
     els.evaluationResults.appendChild(item);
   });
+}
+
+async function loadEvaluations() {
+  const runs = await api("/api/evaluations");
+  if (runs.length) {
+    renderEvaluation(runs[0]);
+  }
 }
 
 async function runEvaluation() {
@@ -395,7 +520,7 @@ async function runEvaluation() {
     els.evaluationState.textContent = "Saved";
   } catch (error) {
     els.evaluationState.textContent = "Error";
-    setStatus(error.message, true);
+    setStatus(friendlyError(error.message), true);
   } finally {
     els.runEvaluationButton.disabled = false;
   }
@@ -408,16 +533,24 @@ function autoGrowInput() {
 
 async function init() {
   try {
-    await Promise.all([loadHealth(), loadPrompt(), loadSessions(), loadDocuments()]);
+    await Promise.all([
+      loadHealth(),
+      loadModelConfig(),
+      loadPrompt(),
+      loadSessions(),
+      loadDocuments(),
+      loadEvaluations(),
+    ]);
     if (state.sessions.length) {
       await selectSession(state.sessions[0].id);
     }
   } catch (error) {
-    setStatus(error.message, true);
+    setStatus(friendlyError(error.message), true);
   }
 }
 
 els.newSessionButton.addEventListener("click", createSession);
+els.saveModelConfigButton.addEventListener("click", saveModelConfig);
 els.savePromptButton.addEventListener("click", savePrompt);
 els.uploadDocumentButton.addEventListener("click", uploadDocument);
 els.runEvaluationButton.addEventListener("click", runEvaluation);

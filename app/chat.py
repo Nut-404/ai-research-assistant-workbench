@@ -1,11 +1,12 @@
 import json
+import re
 from collections.abc import AsyncIterator
 
 from app import repositories as repo
-from app.config import get_settings
 from app.database import get_db
 from app.llm import LLMError, OpenAICompatibleClient
 from app.rag import build_rag_system_prompt, retrieve_sources
+from app.runtime_config import get_effective_settings
 
 
 def make_title(message: str) -> str:
@@ -34,12 +35,44 @@ def build_model_messages(
     return model_messages
 
 
+def validate_citations(assistant_text: str, sources: list[dict]) -> dict:
+    available = [source["source_id"] for source in sources]
+    available_set = set(available)
+    cited = sorted(set(re.findall(r"\[(S\d+)\]", assistant_text)))
+    supported = [source_id for source_id in cited if source_id in available_set]
+    unsupported = [source_id for source_id in cited if source_id not in available_set]
+    missing = [source_id for source_id in available if source_id not in cited]
+
+    if unsupported:
+        status = "unsupported"
+        message = "Some citations do not match retrieved sources."
+    elif available and not cited:
+        status = "missing"
+        message = "Retrieved sources were available, but the answer did not cite them."
+    elif available and supported:
+        status = "valid"
+        message = "Citations match retrieved sources."
+    else:
+        status = "not_applicable"
+        message = "No retrieved sources were available for citation checking."
+
+    return {
+        "status": status,
+        "message": message,
+        "available_source_ids": available,
+        "cited_source_ids": cited,
+        "supported_source_ids": supported,
+        "unsupported_source_ids": unsupported,
+        "missing_source_ids": missing,
+    }
+
+
 async def stream_chat_response(
     session_id: int | None,
     user_message: str,
     use_rag: bool = False,
 ) -> AsyncIterator[str]:
-    settings = get_settings()
+    settings = get_effective_settings()
     public_sources = []
 
     with get_db() as db:
@@ -94,6 +127,12 @@ async def stream_chat_response(
 
     with get_db() as db:
         repo.add_message(db, session_id, "assistant", assistant_text)
+
+    if use_rag:
+        yield encode_sse(
+            "citation_check",
+            validate_citations(assistant_text, public_sources),
+        )
 
     yield encode_sse(
         "done",

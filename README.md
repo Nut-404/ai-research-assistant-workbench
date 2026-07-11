@@ -1,6 +1,6 @@
 # AI Research Assistant Workbench
 
-A practical AI application for studying model behavior, retrieval-augmented generation, and long-term knowledge grounding. The project is designed as a graduate-application portfolio artifact: it is usable as a local assistant, but also exposes measurable AI-system behavior instead of hiding the model behind a simple chat box.
+A practical AI application for studying model behavior, retrieval-augmented generation, and long-term knowledge grounding. The project grew out of curiosity about how AI assistants can be grounded, measured, and improved: it is usable as a local assistant, but also exposes measurable AI-system behavior instead of hiding the model behind a simple chat box.
 
 ![AI Chat Assistant screenshot](screenshots/app.png)
 
@@ -50,8 +50,10 @@ SQLite
 - Browser chat interface with persisted sessions.
 - Streaming assistant responses over Server-Sent Events.
 - Editable system prompt.
-- RAG mode with document upload, chunk storage, embedding-based retrieval, and cited source excerpts.
+- Runtime model/provider configuration for OpenAI-compatible chat and embedding backends.
+- RAG mode with document upload, deletion, chunk storage, embedding-based retrieval, cited source excerpts, and citation-id validation.
 - Model evaluation runs across one or more OpenAI-compatible model names using repeatable benchmark cases.
+- Expandable evaluation details with saved raw outputs and friendly setup errors.
 - Health endpoint that reports model readiness and the active embedding backend.
 - Automated regression tests for chat, RAG, retrieval, and evaluation flows.
 
@@ -116,7 +118,10 @@ http://127.0.0.1:8000
 | `PUT` | `/api/prompt` | Update system prompt |
 | `GET` | `/api/documents` | List knowledge documents |
 | `POST` | `/api/documents` | Add a document to the knowledge base |
+| `DELETE` | `/api/documents/{document_id}` | Remove a document and its chunks |
 | `POST` | `/api/retrieval/preview` | Inspect retrieved sources for a query |
+| `GET` | `/api/model-config` | Read runtime model/provider settings |
+| `PUT` | `/api/model-config` | Update runtime model/provider settings |
 | `GET` | `/api/evaluations` | List recent model evaluation runs |
 | `POST` | `/api/evaluations` | Run a model comparison |
 
@@ -139,11 +144,14 @@ data: {"sources": [{"source_id": "S1", "document_title": "Project notes", ...}]}
 
 event: delta
 data: {"content": "The uploaded notes suggest... [S1]"}
+
+event: citation_check
+data: {"status": "valid", "supported_source_ids": ["S1"], ...}
 ```
 
 ## Model Evaluation Design
 
-Each evaluation run compares one or more model names using the same benchmark cases. The built-in cases cover RAG grounding, model-evaluation metrics, and graduate-portfolio research value. The system records:
+Each evaluation run compares one or more model names using the same benchmark cases. The built-in cases cover RAG grounding, model-evaluation metrics, and AI-system research value. The system records:
 
 - **Response latency**: total wall-clock time for the streamed response.
 - **First-token time**: time until the first streamed token arrives.

@@ -304,6 +304,11 @@ button {
   padding: 14px;
 }
 
+.model-box + .text-input,
+.text-input + .text-input {
+  margin-top: 8px;
+}
+
 .section-title {
   align-items: baseline;
   display: flex;
@@ -385,6 +390,17 @@ button {
   padding: 10px;
 }
 
+.document-item {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.document-summary {
+  min-width: 0;
+}
+
 .document-item strong,
 .evaluation-item strong {
   display: block;
@@ -428,6 +444,48 @@ button {
   white-space: pre-wrap;
 }
 
+.citation-check {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  margin-top: 8px;
+  max-width: 850px;
+  padding: 8px 10px;
+}
+
+.citation-check strong,
+.citation-check span {
+  display: block;
+}
+
+.citation-check span {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.citation-check.valid {
+  border-color: rgba(11, 122, 117, 0.35);
+}
+
+.citation-check.missing,
+.citation-check.unsupported {
+  border-color: rgba(164, 51, 45, 0.35);
+}
+
+.small-button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.danger-button {
+  background: white;
+  color: var(--danger);
+}
+
 .evaluation-item dl {
   display: grid;
   gap: 8px;
@@ -448,6 +506,31 @@ button {
   font-size: 13px;
   font-weight: 800;
   margin: 2px 0 0;
+}
+
+.evaluation-detail {
+  margin-top: 10px;
+}
+
+.evaluation-detail summary {
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.evaluation-detail pre {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 8px 0 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
 }
 
 .error-note {
