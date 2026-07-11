@@ -1,0 +1,106 @@
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+
+from app import repositories as repo
+from app.chat import stream_chat_response
+from app.config import get_settings
+from app.database import get_db, init_db
+from app.schemas import (
+    ChatRequest,
+    HealthOut,
+    MessageOut,
+    PromptOut,
+    PromptUpdate,
+    SessionCreate,
+    SessionOut,
+)
+
+
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title=get_settings().app_name, lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/api/health", response_model=HealthOut)
+def health() -> HealthOut:
+    settings = get_settings()
+    return HealthOut(
+        status="ok",
+        model=settings.openai_model,
+        base_url=settings.openai_base_url,
+    )
+
+
+@app.get("/api/sessions", response_model=list[SessionOut])
+def sessions() -> list[dict]:
+    with get_db() as db:
+        return repo.list_sessions(db)
+
+
+@app.post("/api/sessions", response_model=SessionOut)
+def create_session(payload: SessionCreate) -> dict:
+    with get_db() as db:
+        return repo.create_session(db, payload.title or "New chat")
+
+
+@app.get("/api/sessions/{session_id}/messages", response_model=list[MessageOut])
+def messages(session_id: int) -> list[dict]:
+    with get_db() as db:
+        if repo.get_session(db, session_id) is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return repo.list_messages(db, session_id)
+
+
+@app.post("/api/chat/stream")
+def chat_stream(payload: ChatRequest) -> StreamingResponse:
+    return StreamingResponse(
+        stream_chat_response(payload.session_id, payload.message),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/api/prompt", response_model=PromptOut)
+def get_prompt() -> PromptOut:
+    settings = get_settings()
+    with get_db() as db:
+        system_prompt = (
+            repo.get_setting(db, "system_prompt") or settings.default_system_prompt
+        )
+    return PromptOut(system_prompt=system_prompt)
+
+
+@app.put("/api/prompt", response_model=PromptOut)
+def update_prompt(payload: PromptUpdate) -> PromptOut:
+    with get_db() as db:
+        repo.set_setting(db, "system_prompt", payload.system_prompt)
+    return PromptOut(system_prompt=payload.system_prompt)

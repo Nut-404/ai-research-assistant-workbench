@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Chat Assistant</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Chat sessions">
+        <div class="brand">
+          <div class="brand-mark">AI</div>
+          <div>
+            <h1>AI Chat</h1>
+            <p>FastAPI assistant</p>
+          </div>
+        </div>
+        <button id="new-session-button" class="primary-button" type="button">
+          <span>+</span>
+          New chat
+        </button>
+        <div id="sessions" class="session-list"></div>
+      </aside>
+
+      <main class="chat-panel">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">Conversation</p>
+            <h2 id="active-title">New chat</h2>
+          </div>
+          <div id="status" class="status">Ready</div>
+        </header>
+
+        <section id="messages" class="messages" aria-live="polite">
+          <div class="empty-state">
+            <h3>Start a practical assistant session</h3>
+            <p>Messages stream in real time and are saved to SQLite.</p>
+          </div>
+        </section>
+
+        <form id="chat-form" class="composer">
+          <textarea
+            id="message-input"
+            rows="1"
+            placeholder="Ask something useful..."
+            required
+          ></textarea>
+          <button id="send-button" class="send-button" type="submit">Send</button>
+        </form>
+      </main>
+
+      <aside class="settings-panel" aria-label="Assistant settings">
+        <section>
+          <p class="eyebrow">Model</p>
+          <div class="model-box">
+            <strong id="model-name">Loading</strong>
+            <span id="base-url">Checking provider...</span>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-title">
+            <p class="eyebrow">Prompt</p>
+            <span id="prompt-save-state">Saved</span>
+          </div>
+          <textarea id="prompt-input" class="prompt-input"></textarea>
+          <button id="save-prompt-button" class="secondary-button" type="button">
+            Save prompt
+          </button>
+        </section>
+      </aside>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
