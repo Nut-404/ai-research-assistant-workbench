@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
     embedding TEXT NOT NULL,
+    embedding_provider TEXT NOT NULL DEFAULT 'local-hashing',
+    embedding_model TEXT NOT NULL DEFAULT 'hashing-256',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
@@ -68,6 +70,10 @@ CREATE TABLE IF NOT EXISTS evaluation_results (
     total_tokens INTEGER NOT NULL DEFAULT 0,
     quality_score REAL NOT NULL DEFAULT 0,
     consistency_score REAL NOT NULL DEFAULT 0,
+    retrieval_hit_rate REAL NOT NULL DEFAULT 0,
+    citation_accuracy REAL NOT NULL DEFAULT 0,
+    faithfulness_score REAL NOT NULL DEFAULT 0,
+    benchmark_case_count INTEGER NOT NULL DEFAULT 0,
     output TEXT NOT NULL DEFAULT '',
     error TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -111,6 +117,42 @@ def get_db() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with get_db() as db:
         db.executescript(SCHEMA)
+        _ensure_column(
+            db,
+            "document_chunks",
+            "embedding_provider",
+            "TEXT NOT NULL DEFAULT 'local-hashing'",
+        )
+        _ensure_column(
+            db,
+            "document_chunks",
+            "embedding_model",
+            "TEXT NOT NULL DEFAULT 'hashing-256'",
+        )
+        _ensure_column(
+            db,
+            "evaluation_results",
+            "retrieval_hit_rate",
+            "REAL NOT NULL DEFAULT 0",
+        )
+        _ensure_column(
+            db,
+            "evaluation_results",
+            "citation_accuracy",
+            "REAL NOT NULL DEFAULT 0",
+        )
+        _ensure_column(
+            db,
+            "evaluation_results",
+            "faithfulness_score",
+            "REAL NOT NULL DEFAULT 0",
+        )
+        _ensure_column(
+            db,
+            "evaluation_results",
+            "benchmark_case_count",
+            "INTEGER NOT NULL DEFAULT 0",
+        )
         default_prompt = get_settings().default_system_prompt
         db.execute(
             """
@@ -120,3 +162,15 @@ def init_db() -> None:
             """,
             (default_prompt,),
         )
+
+
+def _ensure_column(
+    db: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_definition: str,
+) -> None:
+    cursor = db.execute(f"PRAGMA table_info({table_name})")
+    existing_columns = {row["name"] for row in cursor.fetchall()}
+    if column_name not in existing_columns:
+        db.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")

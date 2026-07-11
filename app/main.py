@@ -11,7 +11,7 @@ from app.chat import stream_chat_response
 from app.config import get_settings
 from app.database import get_db, init_db
 from app.evaluation import DEFAULT_EVALUATION_PROMPT, EvaluationRunner
-from app.rag import retrieve_sources, store_document
+from app.rag import EmbeddingError, resolve_embedding_backend, retrieve_sources, store_document
 from app.schemas import (
     ChatRequest,
     DocumentCreate,
@@ -59,11 +59,14 @@ def index() -> FileResponse:
 def health() -> HealthOut:
     settings = get_settings()
     api_key_configured = bool(settings.openai_api_key)
+    embedding_provider, embedding_model = resolve_embedding_backend(settings)
     return HealthOut(
         status="ok" if api_key_configured else "degraded",
         model=settings.openai_model,
         base_url=settings.openai_base_url,
         api_key_configured=api_key_configured,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
     )
 
 
@@ -125,7 +128,10 @@ def documents() -> list[dict]:
 @app.post("/api/documents", response_model=DocumentOut)
 def create_document(payload: DocumentCreate) -> dict:
     with get_db() as db:
-        return store_document(db, payload.title, payload.content)
+        try:
+            return store_document(db, payload.title, payload.content)
+        except EmbeddingError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/retrieval/preview", response_model=RetrievalPreviewOut)

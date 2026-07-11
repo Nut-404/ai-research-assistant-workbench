@@ -160,14 +160,30 @@ def add_document_chunk(
     chunk_index: int,
     content: str,
     embedding: str,
+    embedding_provider: str,
+    embedding_model: str,
 ) -> dict:
     cursor = db.execute(
         """
-        INSERT INTO document_chunks(document_id, chunk_index, content, embedding)
-        VALUES(?, ?, ?, ?)
+        INSERT INTO document_chunks(
+            document_id,
+            chunk_index,
+            content,
+            embedding,
+            embedding_provider,
+            embedding_model
+        )
+        VALUES(?, ?, ?, ?, ?, ?)
         RETURNING *
         """,
-        (document_id, chunk_index, content, embedding),
+        (
+            document_id,
+            chunk_index,
+            content,
+            embedding,
+            embedding_provider,
+            embedding_model,
+        ),
     )
     return row_to_dict(cursor.fetchone())
 
@@ -219,10 +235,14 @@ def add_evaluation_result(
             total_tokens,
             quality_score,
             consistency_score,
+            retrieval_hit_rate,
+            citation_accuracy,
+            faithfulness_score,
+            benchmark_case_count,
             output,
             error
         )
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
         """,
         (
@@ -235,6 +255,10 @@ def add_evaluation_result(
             result.get("total_tokens", 0),
             result.get("quality_score", 0),
             result.get("consistency_score", 0),
+            result.get("retrieval_hit_rate", 0),
+            result.get("citation_accuracy", 0),
+            result.get("faithfulness_score", 0),
+            result.get("benchmark_case_count", 0),
             result.get("output", ""),
             result.get("error"),
         ),

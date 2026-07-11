@@ -142,7 +142,7 @@ function scrollToBottom() {
 async function loadHealth() {
   const health = await api("/api/health");
   els.modelName.textContent = health.model;
-  els.baseUrl.textContent = health.base_url;
+  els.baseUrl.textContent = `${health.base_url} · ${health.embedding_provider}/${health.embedding_model}`;
 }
 
 async function loadPrompt() {
@@ -365,6 +365,10 @@ function renderEvaluation(run) {
         <div><dt>Tokens</dt><dd>${result.total_tokens}</dd></div>
         <div><dt>Quality</dt><dd>${Math.round(result.quality_score * 100)}%</dd></div>
         <div><dt>Consistency</dt><dd>${Math.round(result.consistency_score * 100)}%</dd></div>
+        <div><dt>Retrieval hit</dt><dd>${Math.round(result.retrieval_hit_rate * 100)}%</dd></div>
+        <div><dt>Citation</dt><dd>${Math.round(result.citation_accuracy * 100)}%</dd></div>
+        <div><dt>Faithfulness</dt><dd>${Math.round(result.faithfulness_score * 100)}%</dd></div>
+        <div><dt>Cases</dt><dd>${result.benchmark_case_count}</dd></div>
       </dl>
       ${result.error ? `<p class="error-note">${escapeHtml(result.error)}</p>` : ""}
     `;

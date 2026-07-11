@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     temperature: float = Field(default=0.7, ge=0, le=2)
+    embedding_provider: str = "auto"
+    embedding_model: str = "text-embedding-3-small"
 
     default_system_prompt: str = "You are a helpful, concise AI assistant."
     max_history_messages: int = Field(default=20, ge=1, le=100)

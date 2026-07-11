@@ -73,6 +73,10 @@ class EvaluationResultOut(BaseModel):
     total_tokens: int
     quality_score: float
     consistency_score: float
+    retrieval_hit_rate: float
+    citation_accuracy: float
+    faithfulness_score: float
+    benchmark_case_count: int
     output: str
     error: str | None
     created_at: str
@@ -99,3 +103,5 @@ class HealthOut(BaseModel):
     model: str
     base_url: str
     api_key_configured: bool
+    embedding_provider: str
+    embedding_model: str

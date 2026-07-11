@@ -26,8 +26,8 @@ FastAPI backend
   ├─ app/main.py          API routes and static app
   ├─ app/chat.py          conversation orchestration
   ├─ app/llm.py           OpenAI-compatible streaming client
-  ├─ app/rag.py           chunking, local embeddings, retrieval, citations
-  ├─ app/evaluation.py    model comparison workflow
+  ├─ app/rag.py           chunking, semantic embeddings, retrieval, citations
+  ├─ app/evaluation.py    benchmark-based model comparison workflow
   ├─ app/repositories.py  SQLite data access
   └─ app/database.py      schema and initialization
 
@@ -42,17 +42,17 @@ SQLite
 - **FastAPI + SSE**: keeps the backend small while supporting real-time streamed model output and event types such as `session`, `sources`, `delta`, `done`, and `error`.
 - **OpenAI-compatible client**: model calls are isolated in `app/llm.py`, so the app can use OpenAI or another provider that exposes a compatible Chat Completions API.
 - **SQLite persistence**: stores conversations, prompt settings, knowledge base chunks, and evaluation results without requiring external infrastructure.
-- **Local hashing embeddings**: `app/rag.py` uses deterministic local vectors for retrieval so document upload, search, and tests work without an API key. This can later be replaced by OpenAI embeddings, FAISS, Chroma, or another vector store.
-- **Experiment-first evaluation**: `app/evaluation.py` records latency, first-token time, estimated or provider-reported tokens, heuristic output quality, and multi-turn consistency.
+- **Semantic embeddings with local fallback**: `app/rag.py` can use OpenAI-compatible embedding models such as `text-embedding-3-small`, while deterministic local hashing keeps document upload, retrieval, and tests usable without an API key.
+- **Benchmark-first evaluation**: `app/evaluation.py` runs fixed grounded-answering cases and records latency, first-token time, tokens, retrieval hit rate, citation accuracy, answer faithfulness, output quality, and multi-turn consistency.
 
 ## Features
 
 - Browser chat interface with persisted sessions.
 - Streaming assistant responses over Server-Sent Events.
 - Editable system prompt.
-- RAG mode with document upload, chunk storage, retrieval, and cited source excerpts.
-- Model evaluation runs across one or more OpenAI-compatible model names.
-- Health endpoint that reports whether an API key is configured.
+- RAG mode with document upload, chunk storage, embedding-based retrieval, and cited source excerpts.
+- Model evaluation runs across one or more OpenAI-compatible model names using repeatable benchmark cases.
+- Health endpoint that reports model readiness and the active embedding backend.
 - Automated regression tests for chat, RAG, retrieval, and evaluation flows.
 
 ## Local Setup
@@ -82,11 +82,13 @@ cp .env.example .env
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
+EMBEDDING_PROVIDER=auto
+EMBEDDING_MODEL=text-embedding-3-small
 TEMPERATURE=0.7
 MAX_HISTORY_MESSAGES=20
 ```
 
-Leave `OPENAI_API_KEY` blank for local RAG and UI testing. The app will run and return clear model-configuration errors instead of sending requests with a placeholder key.
+Leave `OPENAI_API_KEY` blank for local RAG and UI testing. With `EMBEDDING_PROVIDER=auto`, the app uses semantic embeddings when a key is available and falls back to deterministic local hashing when it is not. Chat and model evaluation return clear model-configuration errors instead of sending requests with a placeholder key.
 
 5. Start the app:
 
@@ -121,7 +123,7 @@ http://127.0.0.1:8000
 ## RAG Workflow
 
 1. Upload or paste a document in the Knowledge panel.
-2. The backend chunks the text, embeds each chunk locally, and stores chunks in SQLite.
+2. The backend chunks the text, embeds each chunk with the configured embedding backend, and stores chunks plus embedding metadata in SQLite.
 3. Turn on `RAG answers`.
 4. Ask a question.
 5. The stream emits retrieved `sources` before answer tokens, and the UI shows source excerpts alongside the answer.
@@ -141,23 +143,26 @@ data: {"content": "The uploaded notes suggest... [S1]"}
 
 ## Model Evaluation Design
 
-Each evaluation run compares one or more model names using the same prompt. The system records:
+Each evaluation run compares one or more model names using the same benchmark cases. The built-in cases cover RAG grounding, model-evaluation metrics, and graduate-portfolio research value. The system records:
 
 - **Response latency**: total wall-clock time for the streamed response.
 - **First-token time**: time until the first streamed token arrives.
 - **Token consumption**: provider-reported usage when available, otherwise a deterministic estimate.
+- **Retrieval hit rate**: whether the retriever surfaces the expected source for each benchmark question.
+- **Citation accuracy**: whether answers cite the expected retrieved source ids without unsupported citations.
+- **Answer faithfulness**: whether answers cover reference terms from the retrieved evidence.
 - **Output quality**: a transparent heuristic based on prompt coverage, answer structure, and useful length.
 - **Multi-turn consistency**: whether the model remembers a user constraint across turns.
 
-The quality score is intentionally simple and inspectable. It is not a replacement for human evaluation; it is a baseline metric that makes repeated experiments easier.
+These scores are intentionally simple and inspectable. They are not a replacement for human evaluation or a judge model, but they make repeated grounded-generation experiments easier to compare.
 
 ## Example Experiment Table
 
 Run your own comparison from the Evaluation panel after setting `OPENAI_API_KEY`. Results are persisted in SQLite and can be retrieved from `/api/evaluations`.
 
-| Model | Latency | First Token | Tokens | Quality | Consistency |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| configured model | measured at runtime | measured at runtime | reported/estimated | 0-100% | 0-100% |
+| Model | Latency | First Token | Tokens | Retrieval Hit | Citation | Faithfulness | Consistency |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| configured model | measured at runtime | measured at runtime | reported/estimated | 0-100% | 0-100% | 0-100% | 0-100% |
 
 Without an API key, evaluation runs still save provider-configuration errors so setup failures are visible and testable.
 
@@ -184,7 +189,7 @@ python -m pip check
 Current verified baseline:
 
 ```text
-Ran 9 tests ... OK
+Ran 11 tests ... OK
 No broken requirements found.
 ```
 
@@ -199,8 +204,8 @@ This is not only a chat demo. It is a small but complete AI-system workbench tha
 
 ## Limitations and Future Work
 
-- Local hashing embeddings are lightweight and reproducible, but weaker than semantic embedding models.
-- The output-quality score is heuristic; a stronger version could include human labels or a separate judge model.
-- SQLite is practical for local use, but large-scale document retrieval should move to FAISS, Chroma, or a hosted vector database.
+- The local hashing fallback is lightweight and reproducible, but semantic embedding models should be used for stronger retrieval experiments.
+- The benchmark metrics are heuristic; a stronger version could include human labels, a separate judge model, or a larger domain-specific evaluation set.
+- SQLite is practical for local use, but large-scale document retrieval should move to FAISS, Chroma, SQLite vector extensions, or a hosted vector database.
 - The app does not yet include authentication, multi-user permissions, document deletion, PDF parsing, or deployment hardening.
 - Evaluation results depend on provider availability and model settings, so serious comparisons should record date, provider, model version, and prompt set.
