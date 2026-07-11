@@ -58,6 +58,10 @@
             <strong id="model-name">Loading</strong>
             <span id="base-url">Checking provider...</span>
           </div>
+          <label class="toggle-row">
+            <input id="rag-toggle" type="checkbox" />
+            <span>RAG answers</span>
+          </label>
         </section>
 
         <section>
@@ -69,6 +73,45 @@
           <button id="save-prompt-button" class="secondary-button" type="button">
             Save prompt
           </button>
+        </section>
+
+        <section>
+          <div class="section-title">
+            <p class="eyebrow">Knowledge</p>
+            <span id="document-state">Ready</span>
+          </div>
+          <input id="document-title" class="text-input" placeholder="Document title" />
+          <input id="document-file" class="file-input" type="file" accept=".txt,.md,.csv,.json" />
+          <textarea
+            id="document-content"
+            class="document-input"
+            placeholder="Paste notes, articles, or project docs..."
+          ></textarea>
+          <button id="upload-document-button" class="secondary-button" type="button">
+            Add to knowledge
+          </button>
+          <div id="documents" class="document-list"></div>
+        </section>
+
+        <section>
+          <div class="section-title">
+            <p class="eyebrow">Evaluation</p>
+            <span id="evaluation-state">Idle</span>
+          </div>
+          <textarea
+            id="evaluation-models"
+            class="compact-input"
+            placeholder="gpt-4o-mini&#10;another-compatible-model"
+          ></textarea>
+          <textarea
+            id="evaluation-prompt"
+            class="compact-input"
+            placeholder="Evaluation prompt"
+          ></textarea>
+          <button id="run-evaluation-button" class="secondary-button" type="button">
+            Run comparison
+          </button>
+          <div id="evaluation-results" class="evaluation-results"></div>
         </section>
       </aside>
     </div>

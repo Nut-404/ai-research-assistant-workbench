@@ -23,6 +23,67 @@ class MessageOut(BaseModel):
 class ChatRequest(BaseModel):
     session_id: int | None = None
     message: str = Field(min_length=1, max_length=12000)
+    use_rag: bool = False
+
+
+class DocumentCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    content: str = Field(min_length=1, max_length=500_000)
+
+
+class DocumentOut(BaseModel):
+    id: int
+    title: str
+    chunk_count: int
+    created_at: str
+    updated_at: str
+
+
+class RetrievedSourceOut(BaseModel):
+    source_id: str
+    document_id: int
+    document_title: str
+    chunk_index: int
+    score: float
+    excerpt: str
+
+
+class RetrievalPreviewRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+    limit: int = Field(default=4, ge=1, le=10)
+
+
+class RetrievalPreviewOut(BaseModel):
+    sources: list[RetrievedSourceOut]
+
+
+class EvaluationRequest(BaseModel):
+    models: list[str] = Field(default_factory=list, max_length=6)
+    prompt: str = Field(default="", max_length=4000)
+
+
+class EvaluationResultOut(BaseModel):
+    id: int
+    run_id: int
+    model: str
+    latency_ms: float | None
+    first_token_ms: float | None
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    quality_score: float
+    consistency_score: float
+    output: str
+    error: str | None
+    created_at: str
+
+
+class EvaluationRunOut(BaseModel):
+    id: int
+    prompt: str
+    models: str
+    created_at: str
+    results: list[EvaluationResultOut] = Field(default_factory=list)
 
 
 class PromptUpdate(BaseModel):
@@ -37,3 +98,4 @@ class HealthOut(BaseModel):
     status: str
     model: str
     base_url: str
+    api_key_configured: bool

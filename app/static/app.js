@@ -2,6 +2,7 @@ const state = {
   sessions: [],
   activeSessionId: null,
   isStreaming: false,
+  useRag: false,
 };
 
 const els = {
@@ -18,6 +19,18 @@ const els = {
   promptInput: document.querySelector("#prompt-input"),
   savePromptButton: document.querySelector("#save-prompt-button"),
   promptSaveState: document.querySelector("#prompt-save-state"),
+  ragToggle: document.querySelector("#rag-toggle"),
+  documentTitle: document.querySelector("#document-title"),
+  documentFile: document.querySelector("#document-file"),
+  documentContent: document.querySelector("#document-content"),
+  uploadDocumentButton: document.querySelector("#upload-document-button"),
+  documentState: document.querySelector("#document-state"),
+  documents: document.querySelector("#documents"),
+  evaluationModels: document.querySelector("#evaluation-models"),
+  evaluationPrompt: document.querySelector("#evaluation-prompt"),
+  runEvaluationButton: document.querySelector("#run-evaluation-button"),
+  evaluationState: document.querySelector("#evaluation-state"),
+  evaluationResults: document.querySelector("#evaluation-results"),
 };
 
 async function api(path, options = {}) {
@@ -92,7 +105,25 @@ function appendMessage(role, content = "") {
   wrapper.appendChild(bubble);
   els.messages.appendChild(wrapper);
   scrollToBottom();
-  return bubble;
+  return { wrapper, bubble };
+}
+
+function renderSources(wrapper, sources) {
+  if (!sources.length) return;
+
+  const sourceList = document.createElement("div");
+  sourceList.className = "source-list";
+  sources.forEach((source) => {
+    const item = document.createElement("details");
+    item.className = "source-item";
+    item.innerHTML = `
+      <summary>${escapeHtml(source.source_id)} · ${escapeHtml(source.document_title)} · ${Math.round(source.score * 100)}%</summary>
+      <p>${escapeHtml(source.excerpt)}</p>
+    `;
+    sourceList.appendChild(item);
+  });
+  wrapper.appendChild(sourceList);
+  scrollToBottom();
 }
 
 function escapeHtml(value) {
@@ -131,6 +162,53 @@ async function savePrompt() {
 async function loadSessions() {
   state.sessions = await api("/api/sessions");
   renderSessions();
+}
+
+async function loadDocuments() {
+  const documents = await api("/api/documents");
+  els.documents.innerHTML = "";
+  if (!documents.length) {
+    els.documents.innerHTML = `<p class="muted-note">No documents yet.</p>`;
+    return;
+  }
+
+  documents.forEach((doc) => {
+    const item = document.createElement("div");
+    item.className = "document-item";
+    item.innerHTML = `
+      <strong>${escapeHtml(doc.title)}</strong>
+      <span>${doc.chunk_count} chunks · ${formatDate(doc.updated_at)}</span>
+    `;
+    els.documents.appendChild(item);
+  });
+}
+
+async function uploadDocument() {
+  els.documentState.textContent = "Indexing";
+  els.uploadDocumentButton.disabled = true;
+  try {
+    const file = els.documentFile.files[0];
+    const content = file ? await file.text() : els.documentContent.value;
+    const title = els.documentTitle.value.trim() || file?.name || "Knowledge note";
+    if (!content.trim()) {
+      throw new Error("Document content is empty.");
+    }
+
+    const document = await api("/api/documents", {
+      method: "POST",
+      body: JSON.stringify({ title, content }),
+    });
+    els.documentTitle.value = "";
+    els.documentFile.value = "";
+    els.documentContent.value = "";
+    els.documentState.textContent = `${document.chunk_count} chunks`;
+    await loadDocuments();
+  } catch (error) {
+    els.documentState.textContent = "Error";
+    setStatus(error.message, true);
+  } finally {
+    els.uploadDocumentButton.disabled = false;
+  }
 }
 
 async function createSession() {
@@ -193,7 +271,8 @@ async function sendMessage(event) {
   }
 
   appendMessage("user", message);
-  const assistantBubble = appendMessage("assistant", "");
+  const assistantMessage = appendMessage("assistant", "");
+  const assistantBubble = assistantMessage.bubble;
 
   try {
     const response = await fetch("/api/chat/stream", {
@@ -202,6 +281,7 @@ async function sendMessage(event) {
       body: JSON.stringify({
         session_id: state.activeSessionId,
         message,
+        use_rag: state.useRag,
       }),
     });
 
@@ -212,6 +292,7 @@ async function sendMessage(event) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let streamFailed = false;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -231,7 +312,12 @@ async function sendMessage(event) {
           scrollToBottom();
         }
 
+        if (item.event === "sources") {
+          renderSources(assistantMessage.wrapper, item.data.sources || []);
+        }
+
         if (item.event === "error") {
+          streamFailed = true;
           assistantBubble.textContent = item.data.message;
           setStatus("Error", true);
         }
@@ -243,7 +329,7 @@ async function sendMessage(event) {
     }
 
     await loadSessions();
-    if (state.activeSessionId) {
+    if (state.activeSessionId && !streamFailed) {
       await selectSession(state.activeSessionId);
     }
   } catch (error) {
@@ -256,6 +342,61 @@ async function sendMessage(event) {
   }
 }
 
+function renderEvaluation(run) {
+  const results = run.results || [];
+  if (!results.length) {
+    els.evaluationResults.innerHTML = `<p class="muted-note">No results yet.</p>`;
+    return;
+  }
+
+  els.evaluationResults.innerHTML = "";
+  results.forEach((result) => {
+    const item = document.createElement("div");
+    item.className = "evaluation-item";
+    const latency = result.latency_ms ? `${Math.round(result.latency_ms)} ms` : "n/a";
+    const firstToken = result.first_token_ms
+      ? `${Math.round(result.first_token_ms)} ms`
+      : "n/a";
+    item.innerHTML = `
+      <strong>${escapeHtml(result.model)}</strong>
+      <dl>
+        <div><dt>Latency</dt><dd>${latency}</dd></div>
+        <div><dt>First token</dt><dd>${firstToken}</dd></div>
+        <div><dt>Tokens</dt><dd>${result.total_tokens}</dd></div>
+        <div><dt>Quality</dt><dd>${Math.round(result.quality_score * 100)}%</dd></div>
+        <div><dt>Consistency</dt><dd>${Math.round(result.consistency_score * 100)}%</dd></div>
+      </dl>
+      ${result.error ? `<p class="error-note">${escapeHtml(result.error)}</p>` : ""}
+    `;
+    els.evaluationResults.appendChild(item);
+  });
+}
+
+async function runEvaluation() {
+  els.evaluationState.textContent = "Running";
+  els.runEvaluationButton.disabled = true;
+  try {
+    const models = els.evaluationModels.value
+      .split("\n")
+      .map((model) => model.trim())
+      .filter(Boolean);
+    const run = await api("/api/evaluations", {
+      method: "POST",
+      body: JSON.stringify({
+        models,
+        prompt: els.evaluationPrompt.value,
+      }),
+    });
+    renderEvaluation(run);
+    els.evaluationState.textContent = "Saved";
+  } catch (error) {
+    els.evaluationState.textContent = "Error";
+    setStatus(error.message, true);
+  } finally {
+    els.runEvaluationButton.disabled = false;
+  }
+}
+
 function autoGrowInput() {
   els.input.style.height = "auto";
   els.input.style.height = `${els.input.scrollHeight}px`;
@@ -263,7 +404,7 @@ function autoGrowInput() {
 
 async function init() {
   try {
-    await Promise.all([loadHealth(), loadPrompt(), loadSessions()]);
+    await Promise.all([loadHealth(), loadPrompt(), loadSessions(), loadDocuments()]);
     if (state.sessions.length) {
       await selectSession(state.sessions[0].id);
     }
@@ -274,6 +415,12 @@ async function init() {
 
 els.newSessionButton.addEventListener("click", createSession);
 els.savePromptButton.addEventListener("click", savePrompt);
+els.uploadDocumentButton.addEventListener("click", uploadDocument);
+els.runEvaluationButton.addEventListener("click", runEvaluation);
+els.ragToggle.addEventListener("change", () => {
+  state.useRag = els.ragToggle.checked;
+  setStatus(state.useRag ? "RAG on" : "Ready");
+});
 els.form.addEventListener("submit", sendMessage);
 els.input.addEventListener("input", autoGrowInput);
 els.input.addEventListener("keydown", (event) => {

@@ -10,12 +10,20 @@ from app import repositories as repo
 from app.chat import stream_chat_response
 from app.config import get_settings
 from app.database import get_db, init_db
+from app.evaluation import DEFAULT_EVALUATION_PROMPT, EvaluationRunner
+from app.rag import retrieve_sources, store_document
 from app.schemas import (
     ChatRequest,
+    DocumentCreate,
+    DocumentOut,
+    EvaluationRequest,
+    EvaluationRunOut,
     HealthOut,
     MessageOut,
     PromptOut,
     PromptUpdate,
+    RetrievalPreviewOut,
+    RetrievalPreviewRequest,
     SessionCreate,
     SessionOut,
 )
@@ -50,10 +58,12 @@ def index() -> FileResponse:
 @app.get("/api/health", response_model=HealthOut)
 def health() -> HealthOut:
     settings = get_settings()
+    api_key_configured = bool(settings.openai_api_key)
     return HealthOut(
-        status="ok",
+        status="ok" if api_key_configured else "degraded",
         model=settings.openai_model,
         base_url=settings.openai_base_url,
+        api_key_configured=api_key_configured,
     )
 
 
@@ -80,7 +90,7 @@ def messages(session_id: int) -> list[dict]:
 @app.post("/api/chat/stream")
 def chat_stream(payload: ChatRequest) -> StreamingResponse:
     return StreamingResponse(
-        stream_chat_response(payload.session_id, payload.message),
+        stream_chat_response(payload.session_id, payload.message, payload.use_rag),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -104,3 +114,44 @@ def update_prompt(payload: PromptUpdate) -> PromptOut:
     with get_db() as db:
         repo.set_setting(db, "system_prompt", payload.system_prompt)
     return PromptOut(system_prompt=payload.system_prompt)
+
+
+@app.get("/api/documents", response_model=list[DocumentOut])
+def documents() -> list[dict]:
+    with get_db() as db:
+        return repo.list_documents(db)
+
+
+@app.post("/api/documents", response_model=DocumentOut)
+def create_document(payload: DocumentCreate) -> dict:
+    with get_db() as db:
+        return store_document(db, payload.title, payload.content)
+
+
+@app.post("/api/retrieval/preview", response_model=RetrievalPreviewOut)
+def retrieval_preview(payload: RetrievalPreviewRequest) -> RetrievalPreviewOut:
+    with get_db() as db:
+        sources = retrieve_sources(db, payload.query, payload.limit)
+    return RetrievalPreviewOut(
+        sources=[
+            source.to_public_dict(index)
+            for index, source in enumerate(sources, start=1)
+        ]
+    )
+
+
+@app.get("/api/evaluations", response_model=list[EvaluationRunOut])
+def evaluation_runs() -> list[dict]:
+    with get_db() as db:
+        runs = repo.list_evaluation_runs(db)
+        for run in runs:
+            run["results"] = repo.list_evaluation_results(db, run["id"])
+        return runs
+
+
+@app.post("/api/evaluations", response_model=EvaluationRunOut)
+async def create_evaluation(payload: EvaluationRequest) -> dict:
+    settings = get_settings()
+    prompt = payload.prompt.strip() or DEFAULT_EVALUATION_PROMPT
+    runner = EvaluationRunner(settings)
+    return await runner.run(payload.models, prompt)

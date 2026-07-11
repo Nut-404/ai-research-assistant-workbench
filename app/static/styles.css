@@ -29,7 +29,8 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input {
   font: inherit;
 }
 
@@ -39,7 +40,7 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
   min-height: 100vh;
 }
 
@@ -59,6 +60,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 28px;
+  max-height: 100vh;
+  overflow-y: auto;
 }
 
 .brand {
@@ -208,6 +211,7 @@ button {
 
 .message {
   display: flex;
+  flex-direction: column;
   max-width: 850px;
 }
 
@@ -249,7 +253,10 @@ button {
 }
 
 .composer textarea,
-.prompt-input {
+.prompt-input,
+.document-input,
+.compact-input,
+.text-input {
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--text);
@@ -265,7 +272,10 @@ button {
 }
 
 .composer textarea:focus,
-.prompt-input:focus {
+.prompt-input:focus,
+.document-input:focus,
+.compact-input:focus,
+.text-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(11, 122, 117, 0.12);
 }
@@ -311,12 +321,141 @@ button {
   width: 100%;
 }
 
+.document-input,
+.compact-input,
+.text-input {
+  padding: 10px 11px;
+  width: 100%;
+}
+
+.document-input {
+  min-height: 120px;
+}
+
+.compact-input {
+  min-height: 82px;
+}
+
+.text-input {
+  min-height: 40px;
+}
+
+.file-input {
+  color: var(--muted);
+  margin-top: 10px;
+  width: 100%;
+}
+
+.toggle-row {
+  align-items: center;
+  color: var(--text);
+  display: flex;
+  font-weight: 700;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.toggle-row input {
+  accent-color: var(--accent);
+  height: 18px;
+  width: 18px;
+}
+
 .secondary-button {
   background: var(--text);
   color: white;
   margin-top: 10px;
   min-height: 42px;
   width: 100%;
+}
+
+.document-list,
+.evaluation-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.document-item,
+.evaluation-item {
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.document-item strong,
+.evaluation-item strong {
+  display: block;
+  font-size: 14px;
+}
+
+.document-item span,
+.muted-note {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  max-width: 850px;
+}
+
+.source-item {
+  background: rgba(238, 243, 240, 0.8);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.source-item summary {
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.source-item p {
+  line-height: 1.45;
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+.evaluation-item dl {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+  margin: 10px 0 0;
+}
+
+.evaluation-item dl div {
+  min-width: 0;
+}
+
+.evaluation-item dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.evaluation-item dd {
+  font-size: 13px;
+  font-weight: 800;
+  margin: 2px 0 0;
+}
+
+.error-note {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 10px 0 0;
+  word-break: break-word;
 }
 
 @media (max-width: 980px) {

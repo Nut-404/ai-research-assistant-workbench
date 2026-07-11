@@ -5,6 +5,7 @@ from app import repositories as repo
 from app.config import get_settings
 from app.database import get_db
 from app.llm import LLMError, OpenAICompatibleClient
+from app.rag import build_rag_system_prompt, retrieve_sources
 
 
 def make_title(message: str) -> str:
@@ -36,8 +37,10 @@ def build_model_messages(
 async def stream_chat_response(
     session_id: int | None,
     user_message: str,
+    use_rag: bool = False,
 ) -> AsyncIterator[str]:
     settings = get_settings()
+    public_sources = []
 
     with get_db() as db:
         if session_id is None:
@@ -60,6 +63,13 @@ async def stream_chat_response(
         system_prompt = (
             repo.get_setting(db, "system_prompt") or settings.default_system_prompt
         )
+        if use_rag:
+            sources = retrieve_sources(db, user_message)
+            public_sources = [
+                source.to_public_dict(index)
+                for index, source in enumerate(sources, start=1)
+            ]
+            system_prompt = build_rag_system_prompt(system_prompt, sources)
         history = repo.recent_messages(
             db,
             session_id,
@@ -67,6 +77,8 @@ async def stream_chat_response(
         )
 
     yield encode_sse("session", {"session_id": session_id})
+    if use_rag:
+        yield encode_sse("sources", {"sources": public_sources})
 
     model_messages = build_model_messages(system_prompt, history[:-1], user_message)
     client = OpenAICompatibleClient(settings)

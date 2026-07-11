@@ -114,3 +114,153 @@ def set_setting(db: sqlite3.Connection, key: str, value: str) -> None:
         """,
         (key, value),
     )
+
+
+def create_document(db: sqlite3.Connection, title: str, content: str) -> dict:
+    cursor = db.execute(
+        """
+        INSERT INTO documents(title, content)
+        VALUES(?, ?)
+        RETURNING *
+        """,
+        (title.strip() or "Untitled document", content),
+    )
+    return row_to_dict(cursor.fetchone())
+
+
+def update_document_chunk_count(
+    db: sqlite3.Connection,
+    document_id: int,
+    chunk_count: int,
+) -> None:
+    db.execute(
+        """
+        UPDATE documents
+        SET chunk_count = ?, updated_at = datetime('now')
+        WHERE id = ?
+        """,
+        (chunk_count, document_id),
+    )
+
+
+def list_documents(db: sqlite3.Connection) -> list[dict]:
+    cursor = db.execute(
+        """
+        SELECT id, title, chunk_count, created_at, updated_at
+        FROM documents
+        ORDER BY datetime(updated_at) DESC, id DESC
+        """
+    )
+    return [row_to_dict(row) for row in cursor.fetchall()]
+
+
+def add_document_chunk(
+    db: sqlite3.Connection,
+    document_id: int,
+    chunk_index: int,
+    content: str,
+    embedding: str,
+) -> dict:
+    cursor = db.execute(
+        """
+        INSERT INTO document_chunks(document_id, chunk_index, content, embedding)
+        VALUES(?, ?, ?, ?)
+        RETURNING *
+        """,
+        (document_id, chunk_index, content, embedding),
+    )
+    return row_to_dict(cursor.fetchone())
+
+
+def list_document_chunks(db: sqlite3.Connection) -> list[dict]:
+    cursor = db.execute(
+        """
+        SELECT
+            document_chunks.*,
+            documents.title AS document_title
+        FROM document_chunks
+        JOIN documents ON documents.id = document_chunks.document_id
+        ORDER BY document_chunks.document_id ASC, document_chunks.chunk_index ASC
+        """
+    )
+    return [row_to_dict(row) for row in cursor.fetchall()]
+
+
+def create_evaluation_run(
+    db: sqlite3.Connection,
+    prompt: str,
+    models: str,
+) -> dict:
+    cursor = db.execute(
+        """
+        INSERT INTO evaluation_runs(prompt, models)
+        VALUES(?, ?)
+        RETURNING *
+        """,
+        (prompt, models),
+    )
+    return row_to_dict(cursor.fetchone())
+
+
+def add_evaluation_result(
+    db: sqlite3.Connection,
+    run_id: int,
+    result: dict,
+) -> dict:
+    cursor = db.execute(
+        """
+        INSERT INTO evaluation_results(
+            run_id,
+            model,
+            latency_ms,
+            first_token_ms,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            quality_score,
+            consistency_score,
+            output,
+            error
+        )
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        RETURNING *
+        """,
+        (
+            run_id,
+            result["model"],
+            result.get("latency_ms"),
+            result.get("first_token_ms"),
+            result.get("prompt_tokens", 0),
+            result.get("completion_tokens", 0),
+            result.get("total_tokens", 0),
+            result.get("quality_score", 0),
+            result.get("consistency_score", 0),
+            result.get("output", ""),
+            result.get("error"),
+        ),
+    )
+    return row_to_dict(cursor.fetchone())
+
+
+def list_evaluation_runs(db: sqlite3.Connection, limit: int = 10) -> list[dict]:
+    cursor = db.execute(
+        """
+        SELECT * FROM evaluation_runs
+        ORDER BY datetime(created_at) DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    return [row_to_dict(row) for row in cursor.fetchall()]
+
+
+def list_evaluation_results(db: sqlite3.Connection, run_id: int) -> list[dict]:
+    cursor = db.execute(
+        """
+        SELECT * FROM evaluation_results
+        WHERE run_id = ?
+        ORDER BY id ASC
+        """,
+        (run_id,),
+    )
+    return [row_to_dict(row) for row in cursor.fetchall()]
