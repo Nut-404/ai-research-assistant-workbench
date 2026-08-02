@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS messages (
     session_id INTEGER NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('system', 'user', 'assistant')),
     content TEXT NOT NULL,
+    metadata TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
@@ -117,6 +118,12 @@ def get_db() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with get_db() as db:
         db.executescript(SCHEMA)
+        _ensure_column(
+            db,
+            "messages",
+            "metadata",
+            "TEXT NOT NULL DEFAULT '{}'",
+        )
         _ensure_column(
             db,
             "document_chunks",

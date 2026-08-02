@@ -28,18 +28,21 @@ BENCHMARK_SOURCES = [
         id="rag-grounding",
         title="RAG grounding note",
         content=(
-            "Retrieval-augmented generation should retrieve relevant document "
-            "chunks, expose cited source excerpts, and tell the user when the "
-            "retrieved context is insufficient instead of inventing facts."
+            "To reduce hallucination when answering from uploaded documents, "
+            "retrieval-augmented generation should retrieve relevant document chunks, "
+            "expose cited source excerpts, and tell the user when the retrieved "
+            "context is insufficient instead of inventing facts."
         ),
     ),
     TextCandidate(
         id="evaluation-metrics",
-        title="Model evaluation note",
+        title="Model evaluation metrics note",
         content=(
-            "A useful model evaluation should compare latency, first-token time, "
-            "token usage, citation accuracy, answer faithfulness, retrieval hit "
-            "rate, and multi-turn consistency across the same benchmark questions."
+            "A useful model evaluation should track and compare metrics such as "
+            "latency, first-token time, token usage, citation accuracy, answer "
+            "faithfulness, retrieval hit rate, and multi-turn consistency across "
+            "the same benchmark questions. These metrics should be tracked when "
+            "comparing models in a research assistant."
         ),
     ),
     TextCandidate(
@@ -49,6 +52,34 @@ BENCHMARK_SOURCES = [
             "A useful AI systems project is stronger when it explains the research "
             "question, experimental design, measurable results, failure cases, "
             "limitations, and future research extensions."
+        ),
+    ),
+    TextCandidate(
+        id="evidence-persistence",
+        title="Evidence persistence note",
+        content=(
+            "A grounded assistant should persist retrieved source metadata and "
+            "citation checks with the assistant message so users can audit evidence "
+            "after reopening a saved conversation."
+        ),
+    ),
+    TextCandidate(
+        id="deployment-safety",
+        title="Deployment safety note",
+        content=(
+            "A deployable local AI workbench should expose configurable CORS "
+            "origins, optional API-token protection, rate limiting, and clear "
+            "provider-configuration errors before it is shared beyond localhost."
+        ),
+    ),
+    TextCandidate(
+        id="retrieval-scaling",
+        title="Retrieval scaling note",
+        content=(
+            "Retrieval quality improves when lexical candidate filtering is combined "
+            "with embedding similarity, while larger knowledge bases should later "
+            "move to FAISS, Chroma, sqlite-vec, or another vector index. As the "
+            "knowledge base grows, a vector index becomes more useful."
         ),
     ),
 ]
@@ -88,6 +119,24 @@ BENCHMARK_CASES = [
         ),
         expected_source_ids=("research-value",),
         reference_terms=("research", "experimental", "results", "limitations"),
+    ),
+    BenchmarkCase(
+        case_id="evidence-persistence",
+        question="Why should RAG source metadata be saved with assistant messages?",
+        expected_source_ids=("evidence-persistence",),
+        reference_terms=("persist", "metadata", "citation", "audit"),
+    ),
+    BenchmarkCase(
+        case_id="deployment-safety",
+        question="Which safeguards matter before sharing this workbench beyond localhost?",
+        expected_source_ids=("deployment-safety",),
+        reference_terms=("CORS", "token", "rate", "configuration"),
+    ),
+    BenchmarkCase(
+        case_id="retrieval-scaling",
+        question="How can retrieval become more useful as the knowledge base grows?",
+        expected_source_ids=("retrieval-scaling",),
+        reference_terms=("lexical", "embedding", "vector", "index"),
     ),
 ]
 
@@ -211,7 +260,7 @@ class EvaluationRunner:
                 retrieved_sources = rank_text_candidates(
                     case.question,
                     BENCHMARK_SOURCES,
-                    limit=2,
+                    limit=3,
                 )
                 retrieved_ids = [source.id for source in retrieved_sources]
                 retrieval_scores.append(

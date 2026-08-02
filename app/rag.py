@@ -85,6 +85,14 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     return sum(a * b for a, b in zip(left, right, strict=False))
 
 
+def lexical_overlap(query: str, content: str) -> float:
+    query_terms = set(tokenize(query))
+    if not query_terms:
+        return 0.0
+    content_terms = set(tokenize(content))
+    return len(query_terms.intersection(content_terms)) / len(query_terms)
+
+
 def normalize_vector(vector: list[float]) -> list[float]:
     magnitude = math.sqrt(sum(value * value for value in vector))
     if magnitude == 0:
@@ -201,11 +209,19 @@ def store_document(db, title: str, content: str) -> dict:
     return document
 
 
-def retrieve_sources(db, query: str, limit: int = 4) -> list[SourceChunk]:
+def retrieve_sources(db, query: str, limit: int = 4, candidate_limit: int = 80) -> list[SourceChunk]:
     embedding_service = EmbeddingService()
     query_embeddings: dict[tuple[str, str], list[float]] = {}
     ranked: list[SourceChunk] = []
-    for chunk in repo.list_document_chunks(db):
+    candidate_chunks = repo.search_document_chunks(
+        db,
+        tokenize(query)[:8],
+        candidate_limit,
+    )
+    if not candidate_chunks:
+        candidate_chunks = repo.list_document_chunks(db)
+
+    for chunk in candidate_chunks:
         provider = chunk["embedding_provider"]
         model = chunk["embedding_model"]
         key = (provider, model)
@@ -219,10 +235,11 @@ def retrieve_sources(db, query: str, limit: int = 4) -> list[SourceChunk]:
             except EmbeddingError:
                 continue
 
-        score = cosine_similarity(
+        semantic_score = cosine_similarity(
             query_embeddings[key],
             deserialize_embedding(chunk["embedding"]),
         )
+        score = (semantic_score * 0.75) + (lexical_overlap(query, chunk["content"]) * 0.25)
         if score <= 0:
             continue
         ranked.append(
@@ -252,11 +269,13 @@ def rank_text_candidates(
         embedding_service.model,
     )
     candidate_embeddings = embedding_service.embed_documents(
-        [candidate.content for candidate in candidates]
+        [f"{candidate.title}\n\n{candidate.content}" for candidate in candidates]
     )
     ranked = []
     for candidate, embedding in zip(candidates, candidate_embeddings, strict=True):
-        score = cosine_similarity(query_embedding, embedding)
+        semantic_score = cosine_similarity(query_embedding, embedding)
+        candidate_text = f"{candidate.title}\n\n{candidate.content}"
+        score = (semantic_score * 0.65) + (lexical_overlap(query, candidate_text) * 0.35)
         if score <= 0:
             continue
         ranked.append(

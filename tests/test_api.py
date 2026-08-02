@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.database import init_db
-from app.main import app
+from app.main import RATE_LIMIT_BUCKETS, app
 
 
 def parse_sse(text: str) -> list[tuple[str, dict]]:
@@ -42,6 +42,7 @@ class ApiTestCase(unittest.TestCase):
         )
         self.env_patch.start()
         get_settings.cache_clear()
+        RATE_LIMIT_BUCKETS.clear()
         init_db()
         self.client_context = TestClient(app)
         self.client = self.client_context.__enter__()
@@ -105,6 +106,31 @@ class ApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json(), {"detail": "Session not found"})
+
+    def test_api_token_protects_api_routes_when_configured(self):
+        with mock.patch.dict(os.environ, {"API_TOKEN": "secret-token"}):
+            get_settings.cache_clear()
+            RATE_LIMIT_BUCKETS.clear()
+            unauthorized = self.client.get("/api/sessions")
+            authorized = self.client.get(
+                "/api/sessions",
+                headers={"X-API-Key": "secret-token"},
+            )
+
+        get_settings.cache_clear()
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(authorized.status_code, 200)
+
+    def test_rate_limit_can_be_configured(self):
+        with mock.patch.dict(os.environ, {"RATE_LIMIT_PER_MINUTE": "1"}):
+            get_settings.cache_clear()
+            RATE_LIMIT_BUCKETS.clear()
+            first = self.client.get("/api/sessions")
+            second = self.client.get("/api/sessions")
+
+        get_settings.cache_clear()
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
 
     def test_stream_returns_clear_error_when_api_key_is_missing(self):
         with self.client.stream(
@@ -249,7 +275,7 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(run["prompt"], "Compare RAG.")
         self.assertEqual(len(run["results"]), 2)
         self.assertEqual(run["results"][0]["model"], "gpt-test-a")
-        self.assertEqual(run["results"][0]["benchmark_case_count"], 3)
+        self.assertEqual(run["results"][0]["benchmark_case_count"], 6)
         self.assertEqual(run["results"][0]["retrieval_hit_rate"], 0)
         self.assertEqual(run["results"][0]["citation_accuracy"], 0)
         self.assertEqual(run["results"][0]["faithfulness_score"], 0)
@@ -267,15 +293,30 @@ class ApiTestCase(unittest.TestCase):
                 user_content = messages[-1]["content"]
                 if "What constraint should the plan respect?" in user_content:
                     content = "The plan must respect the 2 hours per week constraint."
-                elif "reduce hallucination" in user_content:
-                    content = (
-                        "It should retrieve relevant chunks, show citations, and say "
-                        "when context is insufficient [S1]."
-                    )
-                elif "Which metrics" in user_content:
+                elif "Question: Which metrics" in user_content:
                     content = (
                         "Track latency, first-token time, token usage, faithfulness, "
                         "retrieval hit rate, and consistency [S1]."
+                    )
+                elif "Question: Why should RAG source metadata" in user_content:
+                    content = (
+                        "Persist source metadata and citation checks so saved "
+                        "conversations remain auditable [S1]."
+                    )
+                elif "Question: Which safeguards" in user_content:
+                    content = (
+                        "Configure CORS, API-token protection, rate limiting, and "
+                        "provider configuration errors [S1]."
+                    )
+                elif "Question: How can retrieval become more useful" in user_content:
+                    content = (
+                        "Combine lexical candidate filtering with embedding similarity, "
+                        "then move larger stores to a vector index [S1]."
+                    )
+                elif "Question: How should this workbench reduce hallucination" in user_content:
+                    content = (
+                        "It should retrieve relevant chunks, show citations, and say "
+                        "when context is insufficient [S1]."
                     )
                 else:
                     content = (
@@ -299,7 +340,7 @@ class ApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         result = response.json()["results"][0]
-        self.assertEqual(result["benchmark_case_count"], 3)
+        self.assertEqual(result["benchmark_case_count"], 6)
         self.assertGreaterEqual(result["retrieval_hit_rate"], 0.66)
         self.assertGreaterEqual(result["citation_accuracy"], 0.66)
         self.assertGreaterEqual(result["faithfulness_score"], 0.66)
@@ -384,6 +425,17 @@ class ApiTestCase(unittest.TestCase):
         citation_event = [event for event in events if event[0] == "citation_check"][0]
         self.assertEqual(citation_event[1]["status"], "valid")
         self.assertEqual(citation_event[1]["supported_source_ids"], ["S1"])
+        messages = self.client.get("/api/sessions/1/messages").json()
+        assistant_message = messages[-1]
+        self.assertEqual(assistant_message["role"], "assistant")
+        self.assertEqual(
+            assistant_message["metadata"]["citation_check"]["status"],
+            "valid",
+        )
+        self.assertEqual(
+            assistant_message["metadata"]["sources"][0]["document_title"],
+            "Citation note",
+        )
 
 
 if __name__ == "__main__":

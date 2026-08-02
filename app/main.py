@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
+from collections import defaultdict, deque
 from pathlib import Path
+from time import monotonic
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import repositories as repo
@@ -38,6 +40,46 @@ from app.schemas import (
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+RATE_LIMIT_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
+
+
+def parse_allowed_origins(value: str) -> list[str]:
+    origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+    return origins or ["http://127.0.0.1:8000", "http://localhost:8000"]
+
+
+def is_authorized(request: Request) -> bool:
+    token = get_settings().api_token
+    if not token or request.url.path in {"/api/health"}:
+        return True
+    auth_header = request.headers.get("authorization", "")
+    api_key = request.headers.get("x-api-key", "")
+    return api_key == token or auth_header == f"Bearer {token}"
+
+
+def is_rate_limited(request: Request) -> bool:
+    settings = get_settings()
+    if (
+        settings.rate_limit_per_minute <= 0
+        or not request.url.path.startswith("/api/")
+        or request.url.path == "/api/health"
+    ):
+        return False
+
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    client_host = forwarded_for.split(",")[0].strip()
+    if not client_host and request.client:
+        client_host = request.client.host
+    key = f"{client_host or 'unknown'}:{request.url.path}"
+    now = monotonic()
+    window_started = now - 60
+    bucket = RATE_LIMIT_BUCKETS[key]
+    while bucket and bucket[0] < window_started:
+        bucket.popleft()
+    if len(bucket) >= settings.rate_limit_per_minute:
+        return True
+    bucket.append(now)
+    return False
 
 
 @asynccontextmanager
@@ -49,12 +91,28 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title=get_settings().app_name, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=parse_allowed_origins(get_settings().allowed_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        if not is_authorized(request):
+            return JSONResponse(
+                {"detail": "A valid API token is required."},
+                status_code=401,
+            )
+        if is_rate_limited(request):
+            return JSONResponse(
+                {"detail": "Rate limit exceeded. Please wait before retrying."},
+                status_code=429,
+            )
+    return await call_next(request)
 
 
 @app.get("/")

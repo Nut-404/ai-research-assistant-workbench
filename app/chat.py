@@ -125,14 +125,19 @@ async def stream_chat_response(
         yield encode_sse("error", {"message": str(exc)})
         return
 
+    metadata = {}
+    if use_rag:
+        citation_check = validate_citations(assistant_text, public_sources)
+        metadata = {
+            "sources": public_sources,
+            "citation_check": citation_check,
+        }
+
     with get_db() as db:
-        repo.add_message(db, session_id, "assistant", assistant_text)
+        repo.add_message(db, session_id, "assistant", assistant_text, metadata)
 
     if use_rag:
-        yield encode_sse(
-            "citation_check",
-            validate_citations(assistant_text, public_sources),
-        )
+        yield encode_sse("citation_check", citation_check)
 
     yield encode_sse(
         "done",

@@ -17,6 +17,7 @@ class MessageOut(BaseModel):
     session_id: int
     role: str
     content: str
+    metadata: dict = Field(default_factory=dict)
     created_at: str
 
 

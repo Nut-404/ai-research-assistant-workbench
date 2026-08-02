@@ -33,6 +33,7 @@ FastAPI backend
 
 SQLite
   ├─ sessions / messages / settings
+  ├─ message metadata with persisted RAG evidence
   ├─ documents / document_chunks
   └─ evaluation_runs / evaluation_results
 ```
@@ -42,8 +43,9 @@ SQLite
 - **FastAPI + SSE**: keeps the backend small while supporting real-time streamed model output and event types such as `session`, `sources`, `delta`, `done`, and `error`.
 - **OpenAI-compatible client**: model calls are isolated in `app/llm.py`, so the app can use OpenAI or another provider that exposes a compatible Chat Completions API.
 - **SQLite persistence**: stores conversations, prompt settings, knowledge base chunks, and evaluation results without requiring external infrastructure.
-- **Semantic embeddings with local fallback**: `app/rag.py` can use OpenAI-compatible embedding models such as `text-embedding-3-small`, while deterministic local hashing keeps document upload, retrieval, and tests usable without an API key.
+- **Semantic embeddings with local fallback**: `app/rag.py` can use OpenAI-compatible embedding models such as `text-embedding-3-small`, while deterministic local hashing plus lexical candidate filtering keeps document upload, retrieval, and tests usable without an API key.
 - **Benchmark-first evaluation**: `app/evaluation.py` runs fixed grounded-answering cases and records latency, first-token time, tokens, retrieval hit rate, citation accuracy, answer faithfulness, output quality, and multi-turn consistency.
+- **Configurable security boundary**: CORS origins, optional API-token protection, and in-memory request rate limiting are configurable for safer sharing beyond local-only use.
 
 ## Features
 
@@ -88,6 +90,9 @@ EMBEDDING_PROVIDER=auto
 EMBEDDING_MODEL=text-embedding-3-small
 TEMPERATURE=0.7
 MAX_HISTORY_MESSAGES=20
+ALLOWED_ORIGINS=http://127.0.0.1:8000,http://localhost:8000
+API_TOKEN=
+RATE_LIMIT_PER_MINUTE=120
 ```
 
 Leave `OPENAI_API_KEY` blank for local RAG and UI testing. With `EMBEDDING_PROVIDER=auto`, the app uses semantic embeddings when a key is available and falls back to deterministic local hashing when it is not. Chat and model evaluation return clear model-configuration errors instead of sending requests with a placeholder key.
@@ -131,7 +136,8 @@ http://127.0.0.1:8000
 2. The backend chunks the text, embeds each chunk with the configured embedding backend, and stores chunks plus embedding metadata in SQLite.
 3. Turn on `RAG answers`.
 4. Ask a question.
-5. The stream emits retrieved `sources` before answer tokens, and the UI shows source excerpts alongside the answer.
+5. The stream emits retrieved `sources` before answer tokens, then emits a `citation_check` after generation.
+6. The assistant message stores retrieved sources and citation-check metadata, so saved conversations can be reopened with their evidence trail intact.
 
 Example stream shape:
 
@@ -151,7 +157,7 @@ data: {"status": "valid", "supported_source_ids": ["S1"], ...}
 
 ## Model Evaluation Design
 
-Each evaluation run compares one or more model names using the same benchmark cases. The built-in cases cover RAG grounding, model-evaluation metrics, and AI-system research value. The system records:
+Each evaluation run compares one or more model names using the same benchmark cases. The built-in cases cover RAG grounding, model-evaluation metrics, AI-system research value, evidence persistence, deployment safety, and retrieval scaling. The system records:
 
 - **Response latency**: total wall-clock time for the streamed response.
 - **First-token time**: time until the first streamed token arrives.
@@ -197,7 +203,7 @@ python -m pip check
 Current verified baseline:
 
 ```text
-Ran 11 tests ... OK
+Ran 16 tests ... OK
 No broken requirements found.
 ```
 
@@ -215,5 +221,5 @@ This is not only a chat demo. It is a small but complete AI-system workbench tha
 - The local hashing fallback is lightweight and reproducible, but semantic embedding models should be used for stronger retrieval experiments.
 - The benchmark metrics are heuristic; a stronger version could include human labels, a separate judge model, or a larger domain-specific evaluation set.
 - SQLite is practical for local use, but large-scale document retrieval should move to FAISS, Chroma, SQLite vector extensions, or a hosted vector database.
-- The app does not yet include authentication, multi-user permissions, document deletion, PDF parsing, or deployment hardening.
+- The app includes basic API-token protection and rate limiting, but it does not yet include full user accounts, multi-user permissions, PDF parsing, or deployment hardening.
 - Evaluation results depend on provider availability and model settings, so serious comparisons should record date, provider, model version, and prompt set.

@@ -3,6 +3,7 @@ const state = {
   activeSessionId: null,
   isStreaming: false,
   useRag: false,
+  apiToken: window.localStorage.getItem("aiChatApiToken") || "",
 };
 
 const els = {
@@ -41,13 +42,10 @@ const els = {
 };
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
+  let response = await fetchWithAuth(path, options);
+  if (response.status === 401 && requestApiToken()) {
+    response = await fetchWithAuth(path, options);
+  }
 
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
@@ -55,6 +53,29 @@ async function api(path, options = {}) {
 
   if (response.status === 204) return null;
   return response.json();
+}
+
+function apiHeaders(extraHeaders = {}) {
+  return {
+    "Content-Type": "application/json",
+    ...(state.apiToken ? { "X-API-Key": state.apiToken } : {}),
+    ...extraHeaders,
+  };
+}
+
+function fetchWithAuth(path, options = {}) {
+  return fetch(path, {
+    ...options,
+    headers: apiHeaders(options.headers || {}),
+  });
+}
+
+function requestApiToken() {
+  const token = window.prompt("API token required");
+  if (!token) return false;
+  state.apiToken = token.trim();
+  window.localStorage.setItem("aiChatApiToken", state.apiToken);
+  return true;
 }
 
 async function readErrorMessage(response) {
@@ -76,6 +97,9 @@ function friendlyError(message) {
   const value = String(message || "Request failed.");
   if (value.includes("OPENAI_API_KEY")) {
     return "Model provider is not configured. Add an API key in your environment before running chat or evaluation.";
+  }
+  if (value.includes("API token")) {
+    return "A valid API token is required. Refresh and enter the token configured on the server.";
   }
   if (value.includes("Unsupported embedding provider")) {
     return "The selected embedding provider is not supported. Use auto, openai, or local.";
@@ -131,7 +155,15 @@ function renderMessages(messages) {
     return;
   }
 
-  messages.forEach((message) => appendMessage(message.role, message.content));
+  messages.forEach((message) => {
+    const rendered = appendMessage(message.role, message.content);
+    if (message.metadata?.sources) {
+      renderSources(rendered.wrapper, message.metadata.sources);
+    }
+    if (message.metadata?.citation_check) {
+      renderCitationCheck(rendered.wrapper, message.metadata.citation_check);
+    }
+  });
   scrollToBottom();
 }
 
@@ -385,15 +417,26 @@ async function sendMessage(event) {
   const assistantBubble = assistantMessage.bubble;
 
   try {
-    const response = await fetch("/api/chat/stream", {
+    let response = await fetch("/api/chat/stream", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: apiHeaders(),
       body: JSON.stringify({
         session_id: state.activeSessionId,
         message,
         use_rag: state.useRag,
       }),
     });
+    if (response.status === 401 && requestApiToken()) {
+      response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          session_id: state.activeSessionId,
+          message,
+          use_rag: state.useRag,
+        }),
+      });
+    }
 
     if (!response.ok || !response.body) {
       throw new Error(`Streaming failed: ${response.status}`);

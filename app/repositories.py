@@ -1,8 +1,15 @@
 import sqlite3
+import json
 
 
 def row_to_dict(row: sqlite3.Row) -> dict:
-    return dict(row)
+    data = dict(row)
+    if "metadata" in data and isinstance(data["metadata"], str):
+        try:
+            data["metadata"] = json.loads(data["metadata"] or "{}")
+        except json.JSONDecodeError:
+            data["metadata"] = {}
+    return data
 
 
 def create_session(db: sqlite3.Connection, title: str = "New chat") -> dict:
@@ -52,14 +59,20 @@ def add_message(
     session_id: int,
     role: str,
     content: str,
+    metadata: dict | None = None,
 ) -> dict:
     cursor = db.execute(
         """
-        INSERT INTO messages(session_id, role, content)
-        VALUES(?, ?, ?)
+        INSERT INTO messages(session_id, role, content, metadata)
+        VALUES(?, ?, ?, ?)
         RETURNING *
         """,
-        (session_id, role, content),
+        (
+            session_id,
+            role,
+            content,
+            json.dumps(metadata or {}, ensure_ascii=False, separators=(",", ":")),
+        ),
     )
     touch_session(db, session_id)
     return row_to_dict(cursor.fetchone())
@@ -214,6 +227,43 @@ def list_document_chunks(db: sqlite3.Connection) -> list[dict]:
         JOIN documents ON documents.id = document_chunks.document_id
         ORDER BY document_chunks.document_id ASC, document_chunks.chunk_index ASC
         """
+    )
+    return [row_to_dict(row) for row in cursor.fetchall()]
+
+
+def search_document_chunks(
+    db: sqlite3.Connection,
+    tokens: list[str],
+    limit: int = 80,
+) -> list[dict]:
+    cleaned = [token.lower() for token in tokens if token.strip()]
+    if not cleaned:
+        return []
+
+    clauses = []
+    where_params: list[str] = []
+    score_params: list[str] = []
+    score_parts = []
+    for token in cleaned:
+        pattern = f"%{token}%"
+        clauses.append("LOWER(document_chunks.content) LIKE ?")
+        where_params.append(pattern)
+        score_parts.append("CASE WHEN LOWER(document_chunks.content) LIKE ? THEN 1 ELSE 0 END")
+        score_params.append(pattern)
+
+    cursor = db.execute(
+        f"""
+        SELECT
+            document_chunks.*,
+            documents.title AS document_title,
+            ({' + '.join(score_parts)}) AS lexical_score
+        FROM document_chunks
+        JOIN documents ON documents.id = document_chunks.document_id
+        WHERE {' OR '.join(clauses)}
+        ORDER BY lexical_score DESC, document_chunks.document_id ASC, document_chunks.chunk_index ASC
+        LIMIT ?
+        """,
+        (*score_params, *where_params, limit),
     )
     return [row_to_dict(row) for row in cursor.fetchall()]
 
